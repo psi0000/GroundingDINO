@@ -142,5 +142,6 @@ logs/
 grounding/config/configs
 grounding/version.py
 
+weights/
 vis/
 tmp/
