@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="vlm" type="ollama_ros.py" name="ollama_ros_node" output="screen"/>
+  <node pkg="vlm" type="ros_ground.py" name="groundingdino_node" output="screen" launch-prefix="bash -c 'sleep 2; exec'"/>
+</launch>

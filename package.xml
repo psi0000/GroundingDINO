@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>groundingdino</name>
+  <name>vlm</name>
   <version>0.1.0</version>
   <description>GroundingDINO ROS integration</description>
   <maintainer email="you@example.com">Your Name</maintainer>
