@@ -52,7 +52,7 @@ class GroundingDINORosNode:
 
     def _prompt_cb(self, msg: String):
         self.latest_prompt = msg.data
-
+        print(f"[Ollama] Received prompt: {self.latest_prompt}")
     def _image_cb(self, msg: Image):
         try:
             img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -68,9 +68,7 @@ class GroundingDINORosNode:
                     # Preprocess using GroundingDINO's transforms
                     image_source, image = groundingdino_preprocess(self.latest_img)
                     image = image.to(self.device)
-                    # 모델 추론
-                    print(f"[DEBUG] predict used: {predict.__module__} | {predict.__name__}")
-
+                    
                     boxes, logits, phrases = predict(
                         model=self.model,
                         image=image,
@@ -83,7 +81,7 @@ class GroundingDINORosNode:
                         {'box': b.tolist(), 'score': float(s), 'phrase': p}
                         for b, s, p in zip(boxes, logits, phrases)
                     ]
-                    print(f"[DEBUG] predict returned type: {type(results)}, value: {results}")
+                    # print(f"[DEBUG] predict returned type: {type(results)}, value: {results}")
                     self.box_pub.publish(String(json.dumps(results)))
                     # 어노테이션 생성
                     annotated = annotate(
