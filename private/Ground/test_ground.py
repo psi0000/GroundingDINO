@@ -1,7 +1,7 @@
 from groundingdino.util.inference import load_model, load_image, predict, annotate
 import cv2
 
-model = load_model("../../groundingdino/config/GroundingDINO_SwinT_OGC.py", "../../weights/groundingdino_swint_ogc.pth")
+model = load_model("/root/vlm_ws/src/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py", "/root/vlm_ws/src/GroundingDINO/weights/groundingdino_swint_ogc.pth")
 IMAGE_PATH = "image.png"
 TEXT_PROMPT = "top region of Fire extinguisher . person . door . Hanging objects ."
 BOX_TRESHOLD = 0.35
