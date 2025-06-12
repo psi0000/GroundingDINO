@@ -10,9 +10,7 @@ from groundingdino.util.inference import load_model, annotate, predict
 from groundingdino.datasets import transforms as DINOTransforms
 from PIL import Image as PILImage
 import torch
-
 def groundingdino_preprocess(image_bgr: np.ndarray) -> torch.Tensor:
-    
     transform = DINOTransforms.Compose([
         DINOTransforms.RandomResize([800], max_size=1333),
         DINOTransforms.ToTensor(),
@@ -24,8 +22,6 @@ def groundingdino_preprocess(image_bgr: np.ndarray) -> torch.Tensor:
     image_pil = PILImage.fromarray(image_rgb)
     image_transformed, _ = transform(image_pil, None)  # ← numpy X, PIL O
     return image_bgr, image_transformed
-
-
 class GroundingDINORosNode:
     def __init__(self):
         rospy.init_node('groundingdino_node')
@@ -42,14 +38,14 @@ class GroundingDINORosNode:
         # ROS 설정
         self.bridge = CvBridge()
         self.latest_img = None
-        self.latest_prompt = "person . fire extinguisher . door . hanging object ."
+        # self.latest_prompt = "person . fire extinguisher . door . hanging object ."
+        self.latest_prompt = "fire extinguisher "
         rospy.Subscriber('/rgb_image', Image, self._image_cb, queue_size=1, buff_size=2**24)
         rospy.Subscriber('/ollama_msg', String, self._prompt_cb, queue_size=1)
         self.box_pub = rospy.Publisher('/groundingdino/boxes', String, queue_size=1)
         self.img_pub = rospy.Publisher('/groundingdino/annotated_image', Image, queue_size=1)
         rospy.wait_for_message('/rgb_image', Image)
         self.rate = rospy.Rate(10)
-
     def _prompt_cb(self, msg: String):
         self.latest_prompt = msg.data
         print(f"[Ollama] Received prompt: {self.latest_prompt}")
@@ -60,7 +56,6 @@ class GroundingDINORosNode:
         except CvBridgeError as e:
             rospy.logerr(f"CvBridge Error: {e}")
             self.latest_img = None
-
     def spin(self):
         while not rospy.is_shutdown():
             if self.latest_img is not None and self.latest_prompt:
@@ -68,7 +63,6 @@ class GroundingDINORosNode:
                     # Preprocess using GroundingDINO's transforms
                     image_source, image = groundingdino_preprocess(self.latest_img)
                     image = image.to(self.device)
-                    
                     boxes, logits, phrases = predict(
                         model=self.model,
                         image=image,
@@ -82,7 +76,8 @@ class GroundingDINORosNode:
                         for b, s, p in zip(boxes, logits, phrases)
                     ]
                     # print(f"[DEBUG] predict returned type: {type(results)}, value: {results}")
-                    self.box_pub.publish(String(json.dumps(results)))
+                    boxes_only = [b.tolist() for b in boxes]
+                    self.box_pub.publish(String(json.dumps(boxes_only)))
                     # 어노테이션 생성
                     annotated = annotate(
                         image_source=image_source,
@@ -98,8 +93,6 @@ class GroundingDINORosNode:
                 except Exception as e:
                     print(f"[Inference error] {e}")
             self.rate.sleep()
-
-
 if __name__ == '__main__':
     try:
         node = GroundingDINORosNode()

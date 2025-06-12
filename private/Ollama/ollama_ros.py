@@ -40,7 +40,7 @@ class OllamaVQANode:
         추가로:
         - 처리에 사용된 내부 이미지 해상도. 크기 조정되지 않았다면 "original" 반환
 
-        다음 엄격한 JSON 형식으로만 응답:
+        다음 엄격한 JSON 형식으로만 영어로 응답:
 
         {
         "internal_image_resolution": "original",
