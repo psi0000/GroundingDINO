@@ -9,13 +9,14 @@ from cv_bridge import CvBridge, CvBridgeError
 import base64
 import requests
 import re
-
+import time
 class OllamaVQANode:
     def __init__(self):
         # ROS 노드 초기화
         rospy.init_node('ollama_vqa_node')
         # CvBridge 초기화
         self.bridge = CvBridge()
+        self.resize_to = (320, 240) 
         self.latest_img = None
         # ROS 설정
         rospy.Subscriber('/rgb_image', Image, self._image_cb, queue_size=1, buff_size=2**24)
@@ -24,38 +25,53 @@ class OllamaVQANode:
         self.model_name = "qwen2.5vl"
         # 프롬프트 정의
         self.prompt = """
-        드론의 실내 비행 중 촬영한 온보드 카메라 이미지가 제공됩니다.
+            An onboard camera image captured during an indoor drone flight is provided.
 
-        당신의 임무는 드론이 피해야 할 특정 구역을 식별하는 것입니다. 이는 물리적 장애물이 아니라도 다음과 같은 이유로 위험할 수 있습니다:
+            Your task is to identify step-by-step **only those regions in the image that present a semantic risk** to the drone’s safe flight.  
+            - **Do NOT include simple geometric obstacles** (such as plain walls or ceiling and clearly visible solid objects) unless there is a clear semantic/contextual risk.
+            - **Do NOT hallucinate or imagine hidden risks.** Only report risks that have visible evidence in the image (including visible cues, ambiguous regions, or clear context).
 
-        - 중요한 안전 기능 (예: 경보장치, 소화기)
-        - 예측 불가능한 동작 (예: 열린 문, 매달린 물체)
-        - RGB 센서가 잘못 해석할 수 있는 의미적으로 모호한 영역 (예: 반사, 유리, 그림자)
 
-        각 위험 구역에 대해:
-        - 객체 또는 구역을 설명하는 짧은 라벨 제공
-        - 왜 위험한지 설명
-        - 드론의 현재 시점에서 위험 구역을 기준으로 안전한 이동 방향을 제안. 다음 표현 중 하나 사용: "move left", "move right", "move up", "move down"
+            ### Definitions
 
-        추가로:
-        - 처리에 사용된 내부 이미지 해상도. 크기 조정되지 않았다면 "original" 반환
+            - **Explicit risk**: A clearly visible object or area whose risk comes from its state, properties, or context—**not just its physical presence**.
+            - *Examples:*
+                - A hanging object that looks unstable or might fall
+                - An open door, because something or someone could appear from behind it
+                - A window that is open to an unknown or dangerous environment
 
-        다음 엄격한 JSON 형식으로만 영어로 응답:
+            - **Implicit risk**: A region or situation where risk is suggested by ambiguity, occlusion, or limited visibility—**but only if there are visible cues in the image**.
+            - *Examples:*
+                - An area partially blocked by another object (possibly hiding a hazard)
+                - A big hole in the ceiling (where something could fall through) 
+                - A door with smoke or light that suggests a hidden fire
 
-        {
-        "internal_image_resolution": "original",
-        "danger_zones": [
+            - `"risk_direction"`: The direction (**from the object's current position**) in which the risk could affect the drone (choose from: up, down, left, right).
+
+            **Do NOT report risks that are not visually present or supported by cues in the image.**
+
+            For each detected danger zone, report:
+            - `"risk_type"`: "explicit" or "implicit"
+            - `"label"`:  "[state]+[risk]" or "[semantic risk description]" (e.g., "hanging object", "open door", "fire", etc.)
+            - `"reason"`: why it is dangerous
+            - `"risk_direction"`: (choose one: up, down, left, right)
+            
+            Respond **strictly** in the following JSON format (English only):
+
+            ```json
             {
-            "label": "구역의 간결한 설명",
-            "reason": "위험한 이유",
-            "safe_movement_direction": "move left | move right | move up | move down",
-            "risk region position": {
-                "bbox_2d": [x_min, y_min, x_max, y_max]
+            "danger_zones": [
+                {
+                "risk_type": "explicit | implicit",
+                "label": "...",
+                "reason": "...",
+                "risk_direction": "up | down | left | right"
+                }
+            ]
             }
-            }
-        ]
-        }
+
         """
+
         # ROS 메시지 대기
         rospy.wait_for_message('/rgb_image', Image)
         self.rate = rospy.Rate(10)  # 10Hz로 처리
@@ -74,9 +90,15 @@ class OllamaVQANode:
         return base64.b64encode(buffer).decode("utf-8")
 
     def run_ollama_vqa_and_extract_info(self, image: np.ndarray):
-        # 이미지 Base64로 인코딩
-        image_b64 = self.encode_image_to_base64(image)
-        
+        # === 1. 이미지 리사이즈 추가 ===
+        if self.resize_to is not None:
+            resized_image = cv2.resize(image, self.resize_to)
+        else:
+            resized_image = image
+
+        # === 2. Base64 인코딩에 리사이즈된 이미지 사용 ===
+        image_b64 = self.encode_image_to_base64(resized_image)
+
         # Ollama API 요청 페이로드
         payload = {
             "model": self.model_name,
@@ -105,12 +127,14 @@ class OllamaVQANode:
                 full_text = full_text[4:].strip()
 
             # label, reason, direction 추출
+            risk_types = re.findall(r'"risk_type"\s*:\s*"([^"]+)"', full_text)
             labels = re.findall(r'"label"\s*:\s*"([^"]+)"', full_text)
             reasons = re.findall(r'"reason"\s*:\s*"([^"]+)"', full_text)
-            directions = re.findall(r'"safe_movement_direction"\s*:\s*"([^"]+)"', full_text)
+            directions = re.findall(r'"risk_direction"\s*:\s*"([^"]+)"', full_text)
+
 
             # 결과 zip
-            results = list(zip(labels, reasons, directions))
+            results = list(zip(risk_types, labels, reasons, directions))
             return results, full_text
         except requests.RequestException as e:
             rospy.logerr(f"Ollama API 요청 실패: {e}")
@@ -120,14 +144,19 @@ class OllamaVQANode:
         while not rospy.is_shutdown():
             if self.latest_img is not None:
                 try:
+                    print("Ollama VQA 요청 시작...")
+                    start_time = time.time()
                     # Ollama VQA 실행
                     results, raw_text = self.run_ollama_vqa_and_extract_info(self.latest_img)
+                    end_time = time.time()  # 종료 시간
+                    duration = end_time - start_time  # 실행 시간 계산
+                    print(f"Ollama VQA 실행 시간: {duration:.2f}초")
                     if raw_text:
                         # JSON 결과를 /ollama_msg 토픽으로 발행
                         self.pub.publish(String(raw_text))
                         print("Ollama VQA 결과 발행:")
-                        for i, (label, reason, direction) in enumerate(results):
-                            print(f"[{i}] 라벨: {label}, 이유: {reason}, 방향: {direction}")
+                        for i, (risk_type, label, reason, direction) in enumerate(results):
+                            print(f"[{i}] 유형: {risk_type}, 라벨: {label}, 이유: {reason}, 방향: {direction}")
                     else:
                         rospy.logwarn("Ollama에서 유효한 응답 없음")
                 except Exception as e:
