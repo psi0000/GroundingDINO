@@ -28,9 +28,6 @@ class OllamaVQANode:
             An onboard camera image captured during an indoor drone flight is provided.
 
             Your task is to identify step-by-step **only those regions in the image that present a semantic risk** to the drone’s safe flight.  
-            - **Do NOT include simple geometric obstacles** (such as plain walls or ceiling and clearly visible solid objects) unless there is a clear semantic/contextual risk.
-            - **Do NOT hallucinate or imagine hidden risks.** Only report risks that have visible evidence in the image (including visible cues, ambiguous regions, or clear context).
-
 
             ### Definitions
 
@@ -43,17 +40,23 @@ class OllamaVQANode:
             - **Implicit risk**: A region or situation where risk is suggested by ambiguity, occlusion, or limited visibility—**but only if there are visible cues in the image**.
             - *Examples:*
                 - An area partially blocked by another object (possibly hiding a hazard)
-                - A big hole in the ceiling (where something could fall through) 
-                - A door with smoke or light that suggests a hidden fire
+                - A door that suggests a hidden fire
+                - Broken window
+            - `"risk_direction"`: The direction in which the **drone should move to safely avoid the detected risk object or area**.
+                - If the risk is located on the right side of the drone, then `"risk_direction"` should be `"left"` (meaning: move left to avoid the risk).
+                - If the risk is above the drone (e.g., a hanging object), then `"risk_direction"` should be `"down"` (do not fly below it because falling possible).
+                - If the risk is on the left, use `"right"`.
 
-            - `"risk_direction"`: The direction (**from the object's current position**) in which the risk could affect the drone (choose from: up, down, left, right).
-
+            If possible, select the most intuitive direction to avoid direct collision or danger, based on the drone's likely flight path.
             **Do NOT report risks that are not visually present or supported by cues in the image.**
+            - **Must Do NOT include label such as plain walls and ceiling
+            - **Do NOT hallucinate or imagine hidden risks.** Only report risks that have visible evidence in the image (including visible cues, ambiguous regions, or clear context).
+
 
             For each detected danger zone, report:
             - `"risk_type"`: "explicit" or "implicit"
-            - `"label"`:  "[state]+[risk]" or "[semantic risk description]" (e.g., "hanging object", "open door", "fire", etc.)
-            - `"reason"`: why it is dangerous
+            - `"label"`:  "[state]+[risk]" or "[semantic risk description]" (e.g., "hanging object", "broken window", "open door", "fire", etc.)
+            - `"reason"`: why it is dangerous , explain risk position.
             - `"risk_direction"`: (choose one: up, down, left, right)
             
             Respond **strictly** in the following JSON format (English only):
